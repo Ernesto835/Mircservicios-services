@@ -1,0 +1,560 @@
+\documentclass[11pt,a4paper]{article}
+
+% ===================== PAQUETES =====================
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=black]{hyperref}
+
+% ===================== CONFIGURACIÓN DE CÓDIGO =====================
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codekw}{RGB}{0,0,180}
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{codebg},
+    breaklines=true,
+    frame=single,
+    columns=fullflexible,
+    captionpos=b,
+    showstringspaces=false,
+    tabsize=2
+}
+
+% ===================== ENCABEZADO =====================
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small}
+\rhead{\small UTEQ -- Aplicaciones Distribuidas}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+
+\begin{document}
+\sloppy
+
+\begin{center}
+{\small UNIVERSIDAD TÉCNICA ESTATAL DE QUEVEDO}\\
+{\small Facultad de Ciencias de la Computación y Diseño Digital}\\
+{\small Carrera de Software (Rediseño) -- Aplicaciones Distribuidas [20701] -- 7mo Nivel A}\\[0.6em]
+{\Large\bfseries Diseño, Implementación y Despliegue de una Arquitectura de\\
+Microservicios REST con Autenticación JWT para la Gestión\\
+de Solicitudes de Soporte Técnico de Internet}\\[0.4em]
+{\normalsize Gestión de Aula 03}\\[0.8em]
+
+\begin{tabular}{ll}
+\textbf{Integrantes:} & Cristhian Daniel Pacheco Cárdenas  \\
+ & Ernesto Gregory Luna Mora  \\
+ & Robinson Rodrigo Cando Moreno  \\
+\textbf{Docente:} & Guerrero Ulloa Gleiston Cicerón \\
+\textbf{Fecha de entrega:} & 18 de junio de 2026 \\
+\end{tabular}
+\end{center}
+
+\vspace{0.3cm}
+\hrule
+\vspace{0.4cm}
+
+\noindent\textbf{Resumen.} El presente informe documenta el diseño, la implementación y la contenerización de un sistema distribuido orientado a la gestión de solicitudes de soporte técnico relacionadas con el servicio de Internet. La solución adopta una arquitectura de microservicios compuesta por tres componentes funcionalmente independientes —autenticación, gestión de tickets y auditoría de eventos—, articulados mediante un API Gateway basado en Nginx y protegidos por un esquema de autenticación stateless fundamentado en JSON Web Tokens (JWT). El sistema completo es desplegado mediante Docker Compose, incorporando un servicio de monitoreo de contenedores (Portainer) que permite supervisar el estado operativo del ecosistema en tiempo real. Se presenta además el fundamento teórico que sustenta las decisiones arquitectónicas tomadas, los contratos de interfaz expresados en OpenAPI 3.0, y la evidencia empírica de funcionamiento recabada mediante la herramienta Postman.
+
+\vspace{0.3cm}
+
+% =========================================================
+\section{Introducción}
+
+La administración de incidencias técnicas relacionadas con la conectividad a Internet constituye, dentro de cualquier organización que dependa de infraestructura de red para sostener sus operaciones, un proceso que exige trazabilidad rigurosa, asignación de responsabilidades clara y tiempos de respuesta medibles. Cuando este proceso se gestiona de manera informal —mediante correos electrónicos dispersos o comunicación verbal no documentada— se pierde la capacidad de auditar quién atendió qué problema, en qué momento y con qué resultado. El presente proyecto aborda esta necesidad mediante el desarrollo de una plataforma web que estructura el ciclo de vida completo de una solicitud de soporte: desde su creación por parte de un cliente, pasando por su asignación a un técnico, hasta su resolución final, todo ello bajo un esquema de control de acceso basado en roles.
+
+Desde el punto de vista técnico, se ha optado deliberadamente por una arquitectura de microservicios en lugar de un desarrollo monolítico tradicional. Esta decisión obedece a la necesidad pedagógica de la asignatura de exponer a los estudiantes a los patrones de diseño distribuido que dominan la industria del software contemporáneo, así como a ventajas operativas concretas que se desarrollan con detalle en el apartado de fundamento teórico: despliegue independiente de cada componente, aislamiento de fallos y escalabilidad selectiva.
+
+\section{Datos Académicos}
+
+\subsection{Resultado de aprendizaje}
+Aplicar arquitecturas y patrones de diseño distribuido —microservicios, API REST, mensajería asíncrona y arquitectura en capas— para la construcción de sistemas escalables, disponibles y seguros.
+
+\subsection{Tema de la práctica}
+Diseño, implementación y despliegue de una arquitectura de microservicios REST con autenticación JWT, contenerización mediante Docker Compose y gestión de peticiones a través de un API Gateway (Nginx), integrada como Entrega 2 del Proyecto de Fin de Curso.
+
+\section{Objetivos}
+
+\subsection{Objetivo general}
+Implementar una arquitectura de microservicios funcional, compuesta por tres servicios independientes, un API Gateway y un mecanismo de autenticación JWT, contenerizados íntegramente mediante Docker Compose, constituyendo así la Entrega 2 del Proyecto de Fin de Curso.
+
+\subsection{Objetivos específicos}
+\begin{enumerate}
+    \item Diseñar la arquitectura de microservicios del sistema de soporte técnico mediante diagramas C4 de nivel 2 (contenedores) y nivel 3 (componentes).
+    \item Implementar tres microservicios REST funcionalmente independientes: \texttt{auth-service}, \texttt{resource-service} y \texttt{notification-service}.
+    \item Configurar un API Gateway sobre Nginx que enrute las peticiones entrantes hacia cada microservicio correspondiente, aplicando límites de tasa de petición.
+    \item Implementar un esquema de autenticación basado en JWT y contenerizar el sistema completo utilizando imágenes Docker construidas mediante Dockerfiles multi-etapa.
+\end{enumerate}
+
+\section{Fundamento Teórico}
+
+\subsection{Evolución arquitectónica: del monolito a los microservicios}
+
+La forma en que se estructura el software empresarial ha atravesado tres etapas claramente diferenciables. La primera, el \textbf{monolito}, consiste en empaquetar la totalidad de la lógica de negocio, el acceso a datos y la interfaz en una única unidad de despliegue. Este enfoque resulta atractivo en las fases iniciales de un proyecto porque simplifica el desarrollo y las pruebas, pero conforme la base de código crece, cualquier modificación menor obliga a recompilar y volver a desplegar el sistema completo, lo cual incrementa el riesgo de cada lanzamiento y ralentiza los ciclos de entrega \cite{newman2021}.
+
+La segunda etapa, la \textbf{Arquitectura Orientada a Servicios (SOA)}, intentó resolver esta rigidez introduciendo un bus de servicios empresarial (ESB) que orquestaba la comunicación entre componentes reutilizables. Si bien SOA logró cierta modularidad, el ESB se convirtió frecuentemente en un cuello de botella centralizado y en un punto único de fallo, además de requerir gobernanza compleja sobre los contratos de servicio.
+
+La tercera etapa, los \textbf{microservicios}, descompone la aplicación en unidades de negocio pequeñas, desplegables de manera independiente y comunicadas mediante protocolos ligeros como HTTP/REST. A diferencia de SOA, los microservicios evitan un intermediario centralizado pesado y favorecen que cada equipo posea de manera autónoma su servicio, incluyendo su propia base de datos —principio conocido como \emph{Database per Service}—. La evidencia cuantitativa recogida por Blinowski et al. demuestra que esta migración produce mejoras medibles en el tiempo de despliegue y en la capacidad de escalado selectivo, aunque introduce complejidad operativa adicional en materia de observabilidad y consistencia de datos \cite{blinowski2022}.
+
+\begin{table}[h]
+\centering
+\caption{Comparación cuantitativa entre estilos arquitectónicos}
+\label{tab:comparacion-arquitecturas}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Criterio} & \textbf{Monolito} & \textbf{SOA} & \textbf{Microservicios} \\
+\midrule
+Tiempo de despliegue & Alto (sistema completo) & Medio & Bajo (por servicio) \\
+Escalabilidad & Vertical, global & Parcial, vía ESB & Horizontal, selectiva \\
+Aislamiento de fallos & Nulo & Limitado por el ESB & Alto, por diseño \\
+Acoplamiento entre módulos & Muy alto & Medio-alto & Bajo \\
+Complejidad operativa & Baja & Media & Alta \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La Figura \ref{fig:evolucion} ilustra esta transición conceptual, contrastando la unidad de despliegue única del monolito frente a la composición distribuida de microservicios adoptada en el presente proyecto.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1.1cm, every node/.style={font=\small, align=center}]
+    \node[draw, rectangle, minimum width=3.2cm, minimum height=1.8cm, fill=gray!15] (mono) {Monolito\\(UI + Lógica + BD)};
+    \node[draw, rectangle, right=2.8cm of mono, minimum width=1.6cm, minimum height=0.6cm, fill=blue!10] (auth) {auth};
+    \node[draw, rectangle, below=0.3cm of auth, minimum width=1.6cm, minimum height=0.6cm, fill=blue!10] (res) {resource};
+    \node[draw, rectangle, below=0.3cm of res, minimum width=1.6cm, minimum height=0.6cm, fill=blue!10] (notif) {notification};
+    \node[draw, dashed, rectangle, fit=(auth)(res)(notif), inner sep=0.25cm, label={[font=\small]above:Microservicios}] (fit) {};
+    \draw[-{Stealth}] (mono) -- (fit);
+\end{tikzpicture}
+\caption{Transición de un sistema monolítico hacia microservicios independientes}
+\label{fig:evolucion}
+\end{figure}
+
+\subsection{Patrones de arquitectura distribuida: EDA, CQRS y API Gateway}
+
+Cuando los servicios dejan de compartir un proceso común, surge la necesidad de patrones que coordinen su interacción sin reintroducir el acoplamiento que se pretendía eliminar. La \textbf{Arquitectura Orientada a Eventos (EDA)} propone que los servicios se comuniquen publicando y consumiendo eventos a través de un intermediario de mensajería —como Kafka o RabbitMQ— en lugar de invocarse directamente. Esto desacopla temporalmente al productor del consumidor: el primero no necesita saber quién, cuándo ni cuántas veces se procesará su evento. Joshi describe este patrón como fundamental para sistemas que requieren alta disponibilidad ante fallos parciales, puesto que un consumidor caído no impide que el productor continúe operando \cite{joshi2023}.
+
+El patrón \textbf{CQRS} (Command Query Responsibility Segregation) separa las operaciones de escritura (comandos) de las operaciones de lectura (consultas), permitiendo que cada una se optimice y escale de forma independiente. El patrón \textbf{Saga}, por su parte, resuelve el problema de las transacciones distribuidas: en ausencia de una transacción ACID global, una Saga coordina una secuencia de operaciones locales, cada una con su correspondiente acción compensatoria en caso de fallo, garantizando consistencia eventual en lugar de consistencia inmediata \cite{karabell2021}.
+
+Finalmente, el \textbf{API Gateway} —patrón central en el presente proyecto— actúa como punto único de entrada para los clientes externos, ocultando la topología interna de microservicios y centralizando preocupaciones transversales como la autenticación, el límite de tasa de petición (\emph{rate limiting}) y el registro de auditoría (\emph{logging}). En la implementación desarrollada, este rol es asumido por Nginx, que enruta cada prefijo de ruta —\texttt{/api/auth}, \texttt{/api/resources}, \texttt{/api/notifications}— hacia el microservicio correspondiente, según se detalla en la Figura \ref{fig:eda}.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1.4cm, every node/.style={font=\small}]
+    \node[draw, rectangle, rounded corners, fill=orange!15] (prod) {Productor (resource-service)};
+    \node[draw, rectangle, rounded corners, right=2.2cm of prod, fill=gray!10] (bus) {Bus de eventos};
+    \node[draw, rectangle, rounded corners, right=2.2cm of bus, fill=green!10] (cons) {Consumidor (notification-service)};
+    \draw[-{Stealth}] (prod) -- node[above, font=\tiny]{publica evento} (bus);
+    \draw[-{Stealth}] (bus) -- node[above, font=\tiny]{entrega evento} (cons);
+\end{tikzpicture}
+\caption{Esquema conceptual de comunicación orientada a eventos entre microservicios}
+\label{fig:eda}
+\end{figure}
+
+\subsection{APIs RESTful: diseño, documentación y seguridad con JWT}
+
+El estilo arquitectónico REST, formalizado por Fielding, define un conjunto de restricciones —interfaz uniforme, comunicación sin estado, cacheable, cliente-servidor— que, aplicadas correctamente, producen sistemas con bajo acoplamiento y alta capacidad de evolución independiente \cite{fielding2000}. En el diseño de los recursos del presente sistema, cada entidad de negocio (usuario, ticket, notificación) se expone como un recurso direccionable mediante una URI, y las operaciones sobre dicho recurso se expresan a través de los verbos HTTP estándar: \texttt{GET} para consulta, \texttt{POST} para creación, \texttt{PUT} para actualización completa y \texttt{DELETE} para eliminación.
+
+La autenticación, sin embargo, no puede depender de sesiones con estado si se desea preservar la propiedad \emph{stateless} de REST. Por ello se adopta JSON Web Token (JWT), un estándar normalizado en el RFC 7519, que codifica las afirmaciones (\emph{claims}) de identidad del usuario —incluyendo, en el diseño correcto de este sistema, su rol dentro de la organización: Cliente, Técnico, Administrador o Superusuario— dentro de un token firmado digitalmente \cite{jones2015}. El siguiente fragmento ilustra la estructura mínima de una afirmación JWT tal como debe emitirse desde \texttt{auth-service}:
+
+\begin{lstlisting}[caption={Estructura conceptual de las afirmaciones (claims) de un JWT}, label={lst:jwt-claims}]
+{
+  "sub": "tecnico01",
+  "role": "tecnico",
+  "iat": 1750300000,
+  "exp": 1750303600
+}
+\end{lstlisting}
+
+Cada microservicio que expone recursos protegidos —en este caso, \texttt{resource-service}— debe decodificar este token a partir de la cabecera \texttt{Authorization: Bearer <token>} y validar tanto su firma como su vigencia antes de procesar la solicitud, rechazando con un código 401 toda petición que carezca de un token válido.
+
+\subsection{Contenerización con Docker y orquestación con Kubernetes}
+
+La contenerización resuelve un problema histórico de la industria del software: la inconsistencia entre el entorno de desarrollo y el entorno de producción. Mientras que una máquina virtual virtualiza hardware completo —incluyendo un sistema operativo invitado—, un contenedor comparte el núcleo del sistema operativo anfitrión y empaqueta únicamente la aplicación junto con sus dependencias, lo que produce imágenes considerablemente más ligeras y tiempos de arranque casi instantáneos \cite{sultan2019}.
+
+Docker materializa este modelo mediante tres elementos: la \emph{imagen} (una plantilla inmutable construida a partir de un \texttt{Dockerfile}), el \emph{contenedor} (una instancia en ejecución de dicha imagen) y el \emph{registro} (un repositorio donde las imágenes se publican y distribuyen). En el presente proyecto, cada microservicio se construye mediante un \texttt{Dockerfile} de dos etapas (\emph{multi-stage build}): una primera etapa de compilación, que descarga dependencias y produce el artefacto ejecutable, y una segunda etapa de ejecución, considerablemente más liviana, que descarta las herramientas de compilación y conserva únicamente lo necesario para correr la aplicación.
+
+\begin{lstlisting}[language=bash, caption={Dockerfile multi-etapa empleado en auth-service}, label={lst:dockerfile-auth}]
+# Etapa 1: compilacion
+FROM maven:3.9.6-eclipse-temurin-21 AS build
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline
+COPY src ./src
+RUN mvn clean package -Dmaven.test.skip=true
+
+# Etapa 2: ejecucion
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8001
+ENTRYPOINT ["java", "-jar", "app.jar"]
+\end{lstlisting}
+
+Docker Compose, por su parte, permite declarar de manera unificada el conjunto completo de servicios que conforman el sistema —microservicios, bases de datos, gateway y herramienta de monitoreo— en un único archivo descriptivo, levantando toda la topología con la ejecución de un solo comando. Cuando la escala del sistema crece más allá de lo que un único host puede sostener, Kubernetes extiende este modelo introduciendo abstracciones de orquestación —\emph{Pods}, \emph{Deployments} y \emph{Services}— capaces de redistribuir automáticamente las réplicas de un servicio entre múltiples nodos físicos, aplicando estrategias de actualización progresiva como \emph{blue-green} o \emph{canary} \cite{burns2025}.
+
+\section{Arquitectura del Sistema Propuesto}
+
+\subsection{Descripción funcional}
+
+El sistema gestiona solicitudes de soporte técnico de Internet bajo un esquema de cuatro perfiles de usuario, cada uno con privilegios diferenciados:
+
+\begin{itemize}
+    \item \textbf{Cliente}: registra solicitudes mediante un formulario web, adjunta evidencia (PNG, JPG, PDF) y consulta el estado de sus tickets.
+    \item \textbf{Técnico}: accede exclusivamente a los tickets que le han sido asignados, actualiza su estado y registra las acciones realizadas.
+    \item \textbf{Administrador}: supervisa la totalidad de las solicitudes, asigna técnicos manualmente y accede a los registros de auditoría.
+    \item \textbf{Superusuario}: administra integralmente las cuentas y los roles del sistema.
+\end{itemize}
+
+Esta diferenciación de roles se materializa técnicamente como una afirmación adicional (\texttt{role}) dentro del token JWT emitido por \texttt{auth-service}, que \texttt{resource-service} debe inspeccionar para autorizar o denegar cada operación según el perfil del solicitante.
+
+\subsection{Diagrama C4 -- Nivel 2 (Contenedores)}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1cm, every node/.style={font=\small, align=center}]
+    \node[draw, rectangle, rounded corners, fill=yellow!20, minimum width=2.6cm, minimum height=1.2cm] (cliente) {Cliente\\(Postman / Web)};
+    \node[draw, rectangle, rounded corners, fill=red!15, minimum width=3cm, minimum height=1.2cm, below=1.3cm of cliente] (gw) {API Gateway\\Nginx :8080};
+    \node[draw, rectangle, rounded corners, fill=blue!12, minimum width=2.6cm, minimum height=1cm, below left=1.6cm and 3cm of gw] (auth) {auth-service\\:8001};
+    \node[draw, rectangle, rounded corners, fill=blue!12, minimum width=2.6cm, minimum height=1cm, below=1.8cm of gw] (res) {resource-service\\:8002};
+    \node[draw, rectangle, rounded corners, fill=blue!12, minimum width=2.6cm, minimum height=1cm, below right=1.6cm and 3cm of gw] (notif) {notification-service\\:8003};
+    \node[draw, cylinder, shape border rotate=90, fill=gray!10, minimum width=1.6cm, minimum height=0.9cm, below=0.9cm of auth] (dbauth) {auth\_db};
+    \node[draw, cylinder, shape border rotate=90, fill=gray!10, minimum width=1.6cm, minimum height=0.9cm, below=0.9cm of res] (dbres) {tickets\_db};
+    \node[draw, cylinder, shape border rotate=90, fill=gray!10, minimum width=1.6cm, minimum height=0.9cm, below=0.9cm of notif] (dbnotif) {notif\_db};
+    \draw[-{Stealth}] (cliente) -- (gw);
+    \draw[-{Stealth}] (gw) -- (auth);
+    \draw[-{Stealth}] (gw) -- (res);
+    \draw[-{Stealth}] (gw) -- (notif);
+    \draw[-{Stealth}] (auth) -- (dbauth);
+    \draw[-{Stealth}] (res) -- (dbres);
+    \draw[-{Stealth}] (notif) -- (dbnotif);
+    \draw[-{Stealth}, dashed] (res) -- (notif);
+\end{tikzpicture}
+\caption{Diagrama C4 nivel 2: contenedores del sistema y bases de datos independientes por servicio}
+\label{fig:c4-nivel2}
+\end{figure}
+\newpage
+
+\subsection{Diagrama C4 -- Nivel 3 (Componentes de resource-service)}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=0.9cm, every node/.style={font=\small, align=center}]
+    \node[draw, rectangle, rounded corners, fill=blue!10, minimum width=3.4cm] (ctrl) {TicketController};
+    \node[draw, rectangle, rounded corners, fill=blue!10, minimum width=3.4cm, below=of ctrl] (filtro) {Filtro de validación JWT};
+    \node[draw, rectangle, rounded corners, fill=blue!10, minimum width=3.4cm, below=of filtro] (repo) {TicketRepository (JPA)};
+    \node[draw, cylinder, shape border rotate=90, fill=gray!10, minimum width=1.8cm, below=of repo] (db) {tickets\_db};
+    \draw[-{Stealth}] (ctrl) -- (filtro);
+    \draw[-{Stealth}] (filtro) -- (repo);
+    \draw[-{Stealth}] (repo) -- (db);
+\end{tikzpicture}
+\caption{Diagrama C4 nivel 3: componentes internos de resource-service}
+\label{fig:c4-nivel3}
+\end{figure}
+\newpage
+\section{Contratos de Interfaz (OpenAPI 3.0)}
+
+Los contratos completos se encuentran exportados en formato YAML dentro de la carpeta \texttt{/docs/api/} del repositorio. A continuación se presenta el contrato correspondiente a \texttt{auth-service}, que debe contemplar los tres flujos exigidos: registro, autenticación y validación de token.
+
+\begin{lstlisting}[caption={Contrato OpenAPI 3.0 de auth-service (docs/api/auth.yaml)}, label={lst:openapi-auth}]
+openapi: 3.0.3
+info:
+  title: auth-service
+  version: "1.0.0"
+paths:
+  /auth/register:
+    post:
+      summary: Registra un nuevo usuario con un rol asignado
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, role]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+                role:
+                  type: string
+                  enum: [cliente, tecnico, administrador, superusuario]
+      responses:
+        "201": { description: Usuario registrado }
+        "409": { description: El usuario ya existe }
+  /auth/login:
+    post:
+      summary: Autentica al usuario y devuelve un JWT con su rol
+      responses:
+        "200": { description: Login correcto, JWT en data.access_token }
+        "401": { description: Credenciales invalidas }
+  /auth/validate:
+    get:
+      summary: Verifica la validez de un token Bearer
+      security: [ { bearerAuth: [] } ]
+      responses:
+        "200": { description: Token valido }
+        "401": { description: Token invalido o expirado }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Contrato OpenAPI 3.0 de resource-service (docs/api/resource.yaml)}, label={lst:openapi-resource}]
+openapi: 3.0.3
+info:
+  title: resource-service
+  version: "1.0.0"
+paths:
+  /resources:
+    get:
+      summary: Lista los tickets de soporte tecnico
+      security: [ { bearerAuth: [] } ]
+      responses:
+        "200": { description: Listado recuperado }
+        "401": { description: Token requerido }
+    post:
+      summary: Crea un nuevo ticket de soporte
+      security: [ { bearerAuth: [] } ]
+      responses:
+        "201": { description: Ticket creado }
+  /resources/{id}:
+    put:
+      summary: Actualiza el estado o asignacion de un ticket
+      security: [ { bearerAuth: [] } ]
+      responses:
+        "200": { description: Ticket actualizado }
+    delete:
+      summary: Elimina un ticket
+      security: [ { bearerAuth: [] } ]
+      responses:
+        "200": { description: Ticket eliminado }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+\end{lstlisting}
+\newpage
+\section{Contenerización del Sistema}
+
+\subsection{Orquestación con Docker Compose}
+
+El archivo \texttt{docker-compose.yml} declara la totalidad de la topología: los tres microservicios, una base de datos independiente por servicio (cumpliendo el principio \emph{Database per Service} descrito en el apartado teórico), el API Gateway y el servicio de monitoreo Portainer, todos comunicados a través de una red interna de tipo \emph{bridge}.
+
+\begin{lstlisting}[language=bash, caption={docker-compose.yml -- topología completa del sistema}, label={lst:docker-compose}]
+services:
+  postgres-auth:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    networks: [pfc_network]
+
+  postgres-resource:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: tickets_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    networks: [pfc_network]
+
+  postgres-notification:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    networks: [pfc_network]
+
+  auth-service:
+    build: ./auth-service
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-auth:5432/auth_db
+    depends_on: [postgres-auth]
+    networks: [pfc_network]
+
+  resource-service:
+    build: ./resource-service
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-resource:5432/tickets_db
+      NOTIFICATION_URL: http://notification-service:8003
+    depends_on: [postgres-resource, notification-service]
+    networks: [pfc_network]
+
+  notification-service:
+    build: ./notification-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-notification:5432/notification_db
+    depends_on: [postgres-notification]
+    networks: [pfc_network]
+
+  api-gateway:
+    image: nginx:alpine
+    ports: ["8080:8080"]
+    volumes:
+      - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [auth-service, resource-service, notification-service]
+    networks: [pfc_network]
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    ports: ["9000:9000"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [pfc_network]
+
+networks:
+  pfc_network:
+    driver: bridge
+\end{lstlisting}
+
+\subsection{Configuración del API Gateway (Nginx)}
+
+\begin{lstlisting}[language=bash, caption={api-gateway/nginx.conf}, label={lst:nginx-conf}]
+events {}
+http {
+    log_format apigw '$time_iso8601 $request_method $request_uri '
+                      '$remote_addr $status';
+    access_log /var/log/nginx/access.log apigw;
+
+    limit_req_zone $binary_remote_addr zone=mylimit:10m rate=100r/m;
+
+    server {
+        listen 8080;
+        location /api/auth/ {
+            limit_req zone=mylimit burst=20 nodelay;
+            proxy_pass http://auth-service:8001/;
+        }
+        location /api/resources/ {
+            limit_req zone=mylimit burst=20 nodelay;
+            proxy_pass http://resource-service:8002/;
+        }
+        location /api/notifications/ {
+            limit_req zone=mylimit burst=20 nodelay;
+            proxy_pass http://notification-service:8003/;
+        }
+    }
+}
+\end{lstlisting}
+
+\section{Pruebas y Resultados}
+
+La verificación funcional del sistema se realizó mediante la herramienta Postman, ejecutando tres flujos obligatorios contra el API Gateway (\texttt{http://localhost:8080}).
+
+\begin{enumerate}
+    \item \textbf{Flujo 1}: registro de usuario $\rightarrow$ inicio de sesión $\rightarrow$ verificación del JWT retornado.
+    \item \textbf{Flujo 2}: consulta sin token (debe responder 401) $\rightarrow$ consulta con token (200) $\rightarrow$ creación, actualización y eliminación de un ticket.
+    \item \textbf{Flujo 3}: creación de un ticket $\rightarrow$ verificación de que \texttt{notification-service} registró el evento correspondiente.
+\end{enumerate}
+
+% Insertar aqui las capturas de Postman como figuras:
+% \begin{figure}[h]\centering\includegraphics[width=0.8\textwidth]{postman_login.png}\caption{Flujo 1: login exitoso con JWT retornado}\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Resultados de las pruebas end-to-end ejecutadas con Postman}
+\label{tab:resultados-pruebas}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Endpoint} & \textbf{Método} & \textbf{Cód. esperado} & \textbf{Cód. obtenido} & \textbf{Latencia (ms)} \\
+\midrule
+/api/auth/register & POST & 201 & -- & -- \\
+/api/auth/login & POST & 200 & -- & -- \\
+/api/resources (s/token) & GET & 401 & -- & -- \\
+/api/resources (c/token) & GET & 200 & -- & -- \\
+/api/resources & POST & 201 & -- & -- \\
+/api/resources/1 & PUT & 200 & -- & -- \\
+/api/resources/1 & DELETE & 200 & -- & -- \\
+/api/notifications & GET & 200 & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textit{Nota metodológica: las columnas de código obtenido y latencia deben completarse con las mediciones reales extraídas de Postman al momento de la ejecución; no se reportan valores simulados.}
+
+% =========================================================
+\section{Preguntas de Análisis}
+
+\subsection{¿Por qué cada microservicio debe tener su propia base de datos?}
+
+El patrón \emph{Database per Service} constituye la consecuencia lógica de la independencia de despliegue que define a los microservicios. Si dos servicios comparten un mismo esquema de base de datos, cualquier modificación estructural realizada por uno de ellos —añadir una columna, renombrar una tabla— puede romper silenciosamente al otro, reintroduciendo exactamente el acoplamiento fuerte que la arquitectura distribuida pretende evitar; a este antipatrón se le denomina coloquialmente \emph{monolito distribuido}. Al asignar una base de datos exclusiva a cada servicio, este conserva control total sobre su esquema, puede elegir la tecnología de persistencia que mejor se ajuste a su naturaleza, y puede evolucionar sin coordinar dicho cambio con el resto del sistema. El costo de esta autonomía es que las consultas que requieren información de varios servicios ya no pueden resolverse con una sola unión SQL, sino que deben componerse mediante llamadas a la API o mediante eventos, y la consistencia entre servicios pasa a ser eventual en lugar de transaccional.
+
+\subsection{¿Qué ocurre si resource-service cae? Aplicación del patrón Circuit Breaker}
+
+Si \texttt{resource-service} deja de responder, toda solicitud que dependa de él —incluyendo las que provienen del Gateway— quedaría esperando hasta agotar su tiempo límite, o bien fallaría en cascada, contagiando la lentitud a servicios que en realidad están sanos. El patrón \emph{Circuit Breaker} envuelve la llamada hacia ese servicio con una máquina de tres estados: \textbf{Cerrado}, en el cual el tráfico fluye normalmente; \textbf{Abierto}, que se activa tras un número configurado de fallos consecutivos y corta inmediatamente las nuevas peticiones devolviendo una respuesta de reserva o un código 503, sin esperar el tiempo de espera completo; y \textbf{Semiabierto}, que deja pasar una petición de prueba para verificar si el servicio se ha recuperado antes de cerrar el circuito por completo. En el ecosistema de este proyecto, dicho mecanismo resultaría particularmente útil en la llamada que \texttt{resource-service} realiza hacia \texttt{notification-service}: si la auditoría no responde, el circuito debe abrirse y permitir que la creación del ticket continúe sin bloquearse, aplicando una degradación controlada con tiempo de espera acotado.
+
+\subsection{¿El API Gateway introduce un cuello de botella?}
+
+Sí, en sentido estricto: todo el tráfico atraviesa un salto de red adicional, y si el Gateway falla, se convierte en un punto único de fallo para el sistema completo. Sin embargo, este costo se mitiga de varias maneras concretas: habilitando conexiones persistentes (\emph{keep-alive}) hacia los microservicios subyacentes, dimensionando adecuadamente \texttt{worker\_processes} y \texttt{worker\_connections}, y, en escenarios de mayor exigencia, replicando el propio Gateway detrás de un balanceador de carga adicional. En la práctica, la sobrecarga de latencia que introduce Nginx suele medirse en pocos milisegundos, una cifra ampliamente compensada por los beneficios de centralizar en un único punto la autenticación, el límite de tasa de petición y el registro de auditoría perimetral.
+
+\subsection{¿Cómo se escalaría resource-service a tres réplicas?}
+
+Para que \texttt{resource-service} pueda escalarse horizontalmente, debe ser \emph{stateless}: todo su estado debe residir en la base de datos, nunca en la memoria del proceso. Cumplida esta condición, basta ejecutar \texttt{docker compose up --scale resource-service=3} para que Docker levante tres instancias del mismo contenedor. Es indispensable no fijar un \texttt{container\_name} estático ni publicar un puerto de host directamente sobre este servicio, para evitar colisiones entre las réplicas; en su lugar, Nginx debe apuntar su \texttt{upstream} al nombre lógico del servicio, dejando que la resolución DNS interna de Docker distribuya las peticiones entre las tres instancias disponibles mediante un esquema de turno rotativo (\emph{round-robin}). Si el proyecto migrara posteriormente a Kubernetes, el equivalente sería declarar un \texttt{Deployment} con \texttt{replicas: 3} y exponerlo mediante un \texttt{Service} de tipo \texttt{ClusterIP}.
+
+% =========================================================
+\section{Repositorio del Proyecto}
+
+El código fuente del proyecto está disponible en los siguientes repositorios de
+GitHub:
+
+\begin{itemize}
+    \item Repositorio: \url{https://github.com/Ernesto835/Mircservicios-services.git}
+\end{itemize}
+
+\section{\textbf{Declaración de Uso de Inteligencia Artificial}}
+En estricto cumplimiento de la rúbrica y las directrices institucionales sobre honestidad académica, se declara formalmente el alcance, las técnicas y la metodología bajo la cual se emplearon herramientas de Inteligencia Artificial (IA) Generativa en este trabajo técnico:
+
+\begin{itemize}
+    \item \textbf{Mejora de Redacción y Estructura:} Se emplearon modelos de lenguaje avanzados (LLMs) como soporte para la corrección de estilo y la reorganización del texto. Esto incluyó la mejora del flujo narrativo, la eliminación de frases redundantes, la depuración ortográfica del text
+\end{itemize}
+
+% =========================================================
+\section{Conclusiones}
+
+\begin{enumerate}
+    \item La adopción de una arquitectura de microservicios permitió desacoplar las responsabilidades de autenticación, gestión de tickets y auditoría en unidades de despliegue independientes, cada una con su propio ciclo de vida y base de datos exclusiva.
+    \item El uso de JSON Web Tokens proporcionó un mecanismo de autenticación \emph{stateless} compatible con la naturaleza distribuida del sistema, evitando la necesidad de un almacén de sesiones centralizado.
+    \item La centralización del enrutamiento, el límite de tasa de petición y el registro de auditoría en un único API Gateway simplificó considerablemente la superficie de exposición del sistema frente a clientes externos.
+    \item La contenerización mediante Docker Compose, combinada con Dockerfiles multi-etapa, redujo el tamaño final de las imágenes y garantizó la reproducibilidad del entorno de ejecución entre las máquinas de los distintos integrantes del equipo.
+\end{enumerate}
+
+% =========================================================
+\begin{thebibliography}{99}
+
+\bibitem{newman2021} S. Newman, \textit{Building Microservices: Designing Fine-Grained Systems}, 2nd ed. Sebastopol, CA, USA: O'Reilly Media, 2021. ISBN: 978-1-4920-3402-5.
+
+\bibitem{blinowski2022} G. Blinowski, A. Ojdowska, and A. Przybylek, "Monolithic vs. microservice architecture: A performance and scalability evaluation," \textit{IEEE Access}, vol. 10, pp. 20357--20374, 2022. doi: 10.1109/ACCESS.2022.3152803.
+
+\bibitem{joshi2023} U. Joshi, \textit{Patterns of Distributed Systems}. Boston, MA, USA: Addison-Wesley Professional, 2023. ISBN: 978-0-13-822198-0.
+
+\bibitem{karabell2021} I. Karabell Aksakalli et al., "Deployment and communication patterns in microservice architectures," \textit{J. Syst. Softw.}, vol. 180, p. 111014, Oct. 2021. doi: 10.1016/j.jss.2021.111014.
+
+\bibitem{fielding2000} R. T. Fielding, "Architectural styles and the design of network-based software architectures," Ph.D. dissertation, Univ. California, Irvine, CA, USA, 2000.
+
+\bibitem{jones2015} M. Jones, J. Bradley, and N. Sakimura, "JSON Web Token (JWT)," Internet Engineering Task Force, RFC 7519, May 2015. doi: 10.17487/RFC7519.
+
+\bibitem{burns2025} B. Burns, \textit{Designing Distributed Systems}, 2nd ed. Sebastopol, CA, USA: O'Reilly Media, 2025. ISBN: 978-1-09-815635-0.
+
+\bibitem{richardson2018} C. Richardson, \textit{Microservices Patterns: With Examples in Java}. Shelter Island, NY, USA: Manning Publications, 2018. ISBN: 978-1-617-29454-1.
+
+\bibitem{sultan2019} S. Sultan, I. Ahmad, and T. Dimitriou, "Container security: Issues, challenges, and the road ahead," \textit{IEEE Access}, vol. 7, pp. 52976--52996, 2019. doi: 10.1109/ACCESS.2019.2911732.
+
+\bibitem{almeida2022} M. G. de Almeida and E. D. Canedo, "Authentication and authorization in microservices architecture: A systematic literature review," \textit{Appl. Sci.}, vol. 12, no. 6, p. 3023, Mar. 2022. doi: 10.3390/app12063023.
+
+\end{thebibliography}
+
+\end{document}
