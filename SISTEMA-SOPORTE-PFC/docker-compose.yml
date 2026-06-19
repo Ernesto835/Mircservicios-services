@@ -1,0 +1,70 @@
+services:
+  # Base de Datos PostgreSQL única para el ecosistema
+  postgres-db:
+    image: postgres:15
+    container_name: postgres-db
+    environment:
+      POSTGRES_DB: db_soporte
+      POSTGRES_USER: user_pfc
+      POSTGRES_PASSWORD: password_pfc
+    ports:
+      - "5432:5432"
+    networks:
+      - pfc_network
+
+  # Microservicio de Autenticación (Puerto 8001)
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    depends_on:
+      - postgres-db
+    networks:
+      - pfc_network
+
+  # Microservicio de Recursos - Tickets (Puerto 8002)
+  resource-service:
+    build: ./resource-service
+    container_name: resource-service
+    depends_on:
+      - postgres-db
+    networks:
+      - pfc_network
+
+  # Microservicio de Notificaciones - Auditoría (Puerto 8003)
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    depends_on:
+      - postgres-db
+    networks:
+      - pfc_network
+
+  # API Gateway (Nginx) - Única puerta de entrada
+  api-gateway:
+    image: nginx:alpine
+    container_name: nginx-gateway
+    volumes:
+      - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - auth-service
+      - resource-service
+      - notification-service
+    networks:
+      - pfc_network
+
+  # Monitoreo
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer-monitoring
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - pfc_network
+
+networks:
+  pfc_network:
+    driver: bridge
